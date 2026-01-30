@@ -1,2 +1,2 @@
 # gpu-passthrough-manager
-Bash script to help with the sigle/dual GPU passthrough process.
+Bash script to help with the single/dual GPU passthrough process.
