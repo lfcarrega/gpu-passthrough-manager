@@ -359,34 +359,39 @@ get_ipaddr() {
   local max_wait=120
   local waited=0
   local ipaddr=()
-  printf "Waiting for the VM to get an IP"
-  while [[ $waited -lt $max_wait ]]; do
-    case "$method" in
-      "domifaddr")
-        mapfile -t ipaddr < <(sudo virsh domifaddr "$vm_name" | awk 'NR>=3 {print $4}' | sed 's/\/.*//')
-        ;;
-      "dhcp-leases")
-        if get_netif; then
-          for netif in "${vm_netif[@]}"; do
-            mapfile -t ipaddr -O "${#ipaddr[@]}" < <(sudo virsh net-dhcp-leases --network "$netif" | awk 'NR>=3 {print $5}' | sed 's/\/..//')
-          done
-        fi
-        ;;
-    esac
+  local skip_detection="${SKIP_GETIP:-}"
+  if [[ -z "${skip_detection}" ]]; then
+    printf "Waiting for the VM to get an IP"
+    while [[ $waited -lt $max_wait ]]; do
+      case "$method" in
+        "domifaddr")
+          mapfile -t ipaddr < <(sudo virsh domifaddr "$vm_name" | awk 'NR>=3 {print $4}' | sed 's/\/.*//')
+          ;;
+        "dhcp-leases")
+          if get_netif; then
+            for netif in "${vm_netif[@]}"; do
+              mapfile -t ipaddr -O "${#ipaddr[@]}" < <(sudo virsh net-dhcp-leases --network "$netif" | awk 'NR>=3 {print $5}' | sed 's/\/..//')
+            done
+          fi
+          ;;
+      esac
+      if [[ "${#ipaddr}" -gt 0 ]]; then
+        printf " %s\n" "${green}✓${normal}"
+        break
+      fi
+      printf "."
+      sleep 2
+      ((waited+=2))
+    done
     if [[ "${#ipaddr}" -gt 0 ]]; then
-      printf " %s\n" "${green}✓${normal}"
-      break
+      vm_ipaddr=("${ipaddr[@]}")
+      return
+    else
+      printf " %s\n" "${red}✗${normal}"
+      return 1
     fi
-    printf "."
-    sleep 2
-    ((waited+=2))
-  done
-  if [[ "${#ipaddr}" -gt 0 ]]; then
-    vm_ipaddr=("${ipaddr[@]}")
-    return
   else
-    printf " %s\n" "${red}✗${normal}"
-    return 1
+    return
   fi
 }
 
@@ -486,11 +491,9 @@ case "$action" in
             esac
             if [[ "${MOONLIGHT_AUTOSTART,,}" =~ ^(y|yes)$ ]]; then
               launch_moonlight
-            else 
-              if [[ ! "${MOONLIGHT_AUTOSTART,,}" =~ (n|no)$ ]]; then
-                if prompt normal "Launch Moonlight to connect? Make sure you have already paired your client with your host!"; then
-                  launch_moonlight
-                fi
+            else
+              if prompt normal "Launch Moonlight to connect? Make sure you have already paired your client with your host!"; then
+                launch_moonlight
               fi
             fi
           fi
@@ -510,4 +513,3 @@ case "$action" in
     die "Usage: $0 <gpu_alias> <vm_name> [start|stop|recover]"
     ;;
 esac
-
